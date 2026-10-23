@@ -332,6 +332,12 @@ public static class ModInstanceList
             }
 
             var instanceFolder = folder.FullName + @"\";
+            // 跳过正在安装中的整合包实例：其尚未写入 version json，扫描会误判为“错误的实例”（#3666）
+            if (ModModpack.IsInstanceInstalling(instanceFolder))
+            {
+                ModBase.Log("[Minecraft] 跳过正在安装中的整合包实例：" + instanceFolder);
+                continue;
+            }
             if (File.Exists(instanceFolder + ".pclignore"))
             {
                 if (_isFirstMcInstanceListLoad)
