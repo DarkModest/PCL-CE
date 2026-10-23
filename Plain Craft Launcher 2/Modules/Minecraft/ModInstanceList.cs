@@ -336,6 +336,9 @@ public static class ModInstanceList
             if (ModModpack.IsInstanceInstalling(instanceFolder))
             {
                 ModBase.Log("[Minecraft] 跳过正在安装中的整合包实例：" + instanceFolder);
+                // 缓存指纹已含该文件夹名但卡片列表不含它，置为无效以确保
+                // 安装期间异常退出后，下次启动的全量重扫仍能处理该文件夹（#3666）
+                ModBase.WriteIni(Path.Combine(path, "PCL.ini"), "InstanceCache", "");
                 continue;
             }
             if (File.Exists(instanceFolder + ".pclignore"))
