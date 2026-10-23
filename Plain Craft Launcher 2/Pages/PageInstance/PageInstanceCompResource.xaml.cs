@@ -2109,29 +2109,60 @@ public partial class PageInstanceCompResource : IRefreshable
             var newModEntity = new ModLocalComp.LocalCompFile(newPath);
             newModEntity.FromJson(modEntity.ToJson());
             newModEntity.CopyLoadedStateFrom(modEntity); // 仅改名未改内容，复用已解析元数据，免得 UI 线程重新解压
+            // 采纳现状时若列表已有同路径条目（如扫描时两名并存、外部仅删除其一），
+            // 它承载着幸存文件的完整元数据，应保留它并仅移除过期源条目，避免用缺失源的信息覆盖
+            var keepExistingTarget = !File.Exists(modEntity.path) &&
+                                     ModLocalComp.compResourceListLoader.output.Contains(newModEntity);
             if (ModLocalComp.compResourceListLoader.output.Contains(modEntity))
             {
                 var indexOfLoader = ModLocalComp.compResourceListLoader.output.IndexOf(modEntity);
                 ModLocalComp.compResourceListLoader.output.RemoveAt(indexOfLoader);
-                // 若列表中已有同路径条目（如扫描时两名并存、外部仅删除其一），一并移除，避免重复实体残留
-                while (ModLocalComp.compResourceListLoader.output.Contains(newModEntity))
-                    ModLocalComp.compResourceListLoader.output.Remove(newModEntity);
-                ModLocalComp.compResourceListLoader.output.Insert(
-                    Math.Min(indexOfLoader, ModLocalComp.compResourceListLoader.output.Count), newModEntity);
+                if (!keepExistingTarget)
+                {
+                    while (ModLocalComp.compResourceListLoader.output.Contains(newModEntity))
+                        ModLocalComp.compResourceListLoader.output.Remove(newModEntity);
+                    ModLocalComp.compResourceListLoader.output.Insert(
+                        Math.Min(indexOfLoader, ModLocalComp.compResourceListLoader.output.Count), newModEntity);
+                }
             }
 
             if (searchResult is not null && searchResult.Contains(modEntity)) // #4862
             {
                 var indexOfResult = searchResult.IndexOf(modEntity);
                 searchResult.Remove(modEntity);
-                while (searchResult.Contains(newModEntity))
-                    searchResult.Remove(newModEntity);
-                searchResult.Insert(Math.Min(indexOfResult, searchResult.Count), newModEntity);
+                if (!keepExistingTarget)
+                {
+                    while (searchResult.Contains(newModEntity))
+                        searchResult.Remove(newModEntity);
+                    searchResult.Insert(Math.Min(indexOfResult, searchResult.Count), newModEntity);
+                }
             }
 
             // 更改 UI 中的列表
             try
             {
+                if (keepExistingTarget)
+                {
+                    var existingEntity = ModLocalComp.compResourceListLoader.output
+                        .FirstOrDefault(e => e.Equals(newModEntity));
+                    if (existingEntity is not null)
+                    {
+                        var existingItem = BuildLocalCompItem(existingEntity);
+                        modItems[modEntity.RawPath] = existingItem;
+                        var oldRowIndexes = PanList.Children.OfType<MyLocalCompItem>()
+                            .Where(i => ReferenceEquals(i.Entry, modEntity) || ReferenceEquals(i.Entry, existingEntity))
+                            .Select(i => PanList.Children.IndexOf(i))
+                            .Where(idx => idx >= 0)
+                            .OrderBy(idx => idx)
+                            .ToList();
+                        var insertAt = oldRowIndexes.Count > 0 ? oldRowIndexes[0] : PanList.Children.Count;
+                        for (var i = oldRowIndexes.Count - 1; i >= 0; i--)
+                            PanList.Children.RemoveAt(oldRowIndexes[i]);
+                        PanList.Children.Insert(Math.Min(insertAt, PanList.Children.Count), existingItem);
+                    }
+                    continue;
+                }
+
                 var newItem = BuildLocalCompItem(newModEntity);
                 modItems[modEntity.RawPath] = newItem;
                 // 同路径的既有行（如两名并存时另一条目的行）一并移除，避免重复行残留
@@ -2414,15 +2445,18 @@ public partial class PageInstanceCompResource : IRefreshable
 
             // 确认需要删除的文件
             // 文件夹只需要删除自身
+            // 条目的状态可能已过期（如外部把文件改名到 .disabled/.old），全部后缀变体纳入候选，
+            // 由下方 File.Exists 过滤出真实存在的文件
             modList = modList.SelectMany(target =>
                 {
                     if (target.IsFolder) return new[] { target.path };
 
-                    if (target.State == ModLocalComp.LocalCompFile.LocalFileStatus.Fine)
-                        return new[]
-                            { target.path, target.path + (File.Exists(target.path + ".old") ? ".old" : ".disabled") };
-
-                    return new[] { target.path, target.RawPath };
+                    return new[]
+                    {
+                        target.path, target.RawPath,
+                        target.path + ".old", target.path + ".disabled",
+                        target.RawPath + ".old", target.RawPath + ".disabled"
+                    };
                 }).Distinct()
                 .Where(m => m.EndsWithF(@"\__FOLDER__", true)
                     ? Directory.Exists(m.Replace(@"\__FOLDER__", ""))
