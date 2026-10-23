@@ -2063,9 +2063,15 @@ public partial class PageInstanceCompResource : IRefreshable
             // 重命名
             try
             {
-                if (File.Exists(newPath))
+                if (File.Exists(newPath) && !File.Exists(modEntity.path))
                 {
-                    if (File.Exists(modEntity.path))
+                    // 目标已存在而原名缺失：磁盘已处于目标状态（可能被外部改名），直接采纳，无需重命名
+                    ModBase.Log("[Mod] 目标文件已存在而原文件缺失，采纳现状：" + newPath,
+                        ModBase.LogLevel.Developer);
+                }
+                else
+                {
+                    if (File.Exists(newPath))
                     {
                         // 同时存在两个名称的 Mod
                         if ((ModBase.GetFileMD5(modEntity.path) ?? "") != (ModBase.GetFileMD5(newPath) ?? ""))
@@ -2077,16 +2083,10 @@ public partial class PageInstanceCompResource : IRefreshable
                             continue;
                         }
                     }
-                    else
-                    {
-                        // 已经重命名过了
-                        ModBase.Log("[Mod] Mod 的状态已被切换", ModBase.LogLevel.Debug);
-                        continue;
-                    }
-                }
 
-                File.Delete(newPath);
-                FileSystem.Rename(modEntity.path, newPath);
+                    File.Delete(newPath);
+                    FileSystem.Rename(modEntity.path, newPath);
+                }
             }
             catch (FileNotFoundException ex)
             {
@@ -2385,6 +2385,21 @@ public partial class PageInstanceCompResource : IRefreshable
         try
         {
             var isSuccessful = true;
+            // 文件已被外部改名/删除的过期条目：其 path 与实际待删文件（如 .disabled）不再一致，
+            // 下方按路径重建的实体会与显示条目匹配失败，导致文件删除后 UI 行残留。先按原始引用清理。
+            foreach (var target in modList.Where(t =>
+                         t.IsFolder ? !Directory.Exists(t.ActualPath) : !File.Exists(t.path)).ToList())
+            {
+                ModLocalComp.compResourceListLoader.output.Remove(target);
+                searchResult?.Remove(target);
+                modItems.Remove(target.RawPath);
+                selectedMods.Remove(target.RawPath);
+                var indexOfStale = PanList.Children.IndexOf(PanList.Children.OfType<MyLocalCompItem>()
+                    .FirstOrDefault(i => ReferenceEquals(i.Entry, target)));
+                if (indexOfStale >= 0)
+                    PanList.Children.RemoveAt(indexOfStale);
+            }
+
             // 确认需要删除的文件
             // 文件夹只需要删除自身
             modList = modList.SelectMany(target =>
