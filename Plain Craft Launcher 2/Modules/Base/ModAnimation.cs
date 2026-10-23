@@ -32,9 +32,6 @@ public static partial class ModAnimation
         aniFPSTimer = aniLastTick;
         aniRunning = true; // 标记动画执行开始
 
-        var minFrameGap = 1000d / (Config.System.AnimationFpsLimit + 1) / 2;
-
-
         ModBase.RunInNewThread(() =>
         {
             try
@@ -42,6 +39,11 @@ public static partial class ModAnimation
                 ModBase.Log("[Animation] 动画线程开始");
                 while (true)
                 {
+                    // 每帧读取帧率限制，使设置修改后即时生效。
+                    // 除以 2 是对 Sleep 粒度与 UI 派发延迟的历史补偿，去掉会使所有用户的实际帧率减半，
+                    // 实际帧率约为标称值的 1～2 倍，请勿“修正”此处（详见 PR #3689 的讨论）。
+                    var minFrameGap = 1000d / (Config.System.AnimationFpsLimit + 1) / 2;
+
                     // 两帧之间的间隔时间
                     var deltaTime =
                         (long)Math.Round(ModBase.MathClamp(TimeUtils.GetTimeTick() - aniLastTick, 0, 100000));
