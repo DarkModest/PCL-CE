@@ -34,6 +34,15 @@ public static class ModModpack
     }
 
     /// <summary>
+    ///     移除整合包实例的安装中标记（安装结束或文件夹清理后调用）。
+    /// </summary>
+    public static void UnmarkInstanceInstalling(string instanceFolder)
+    {
+        lock (_InstallingInstancesLock)
+            _InstallingInstances.Remove(instanceFolder);
+    }
+
+    /// <summary>
     ///     检查整合包实例是否正在安装中；安装已结束（成功/失败/取消）的标记会被自动清理。
     /// </summary>
     public static bool IsInstanceInstalling(string instanceFolder)

@@ -119,9 +119,15 @@ public partial class PageDownloadCompDetail
                         }
                     }
 
+                    if (myLoader.State is ModBase.LoadState.Failed or ModBase.LoadState.Aborted)
+                        // 下载失败或取消后实例文件夹会被清理，同步解除安装中标记（#3666）
+                        ModModpack.UnmarkInstanceInstalling(
+                            $@"{ModFolder.mcFolderSelected}versions\{instanceName}\");
                     ModDownloadLib.McInstallFailedClearFolder(myLoader);
                 }
             };
+            // 压缩包直接下载到 versions\<实例名>\ 内，下载期间同样需要跳过实例列表扫描（#3666）
+            ModModpack.MarkInstanceInstalling($@"{ModFolder.mcFolderSelected}versions\{instanceName}\", loader);
             loader.Start(Path.Combine(ModFolder.mcFolderSelected, "versions", instanceName));
             ModLoader.LoaderTaskbarAdd(loader);
             ModMain.frmMain.BtnExtraDownload.ShowRefresh();
