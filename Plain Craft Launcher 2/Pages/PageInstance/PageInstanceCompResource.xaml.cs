@@ -2113,14 +2113,20 @@ public partial class PageInstanceCompResource : IRefreshable
             {
                 var indexOfLoader = ModLocalComp.compResourceListLoader.output.IndexOf(modEntity);
                 ModLocalComp.compResourceListLoader.output.RemoveAt(indexOfLoader);
-                ModLocalComp.compResourceListLoader.output.Insert(indexOfLoader, newModEntity);
+                // 若列表中已有同路径条目（如扫描时两名并存、外部仅删除其一），一并移除，避免重复实体残留
+                while (ModLocalComp.compResourceListLoader.output.Contains(newModEntity))
+                    ModLocalComp.compResourceListLoader.output.Remove(newModEntity);
+                ModLocalComp.compResourceListLoader.output.Insert(
+                    Math.Min(indexOfLoader, ModLocalComp.compResourceListLoader.output.Count), newModEntity);
             }
 
             if (searchResult is not null && searchResult.Contains(modEntity)) // #4862
             {
                 var indexOfResult = searchResult.IndexOf(modEntity);
                 searchResult.Remove(modEntity);
-                searchResult.Insert(indexOfResult, newModEntity);
+                while (searchResult.Contains(newModEntity))
+                    searchResult.Remove(newModEntity);
+                searchResult.Insert(Math.Min(indexOfResult, searchResult.Count), newModEntity);
             }
 
             // 更改 UI 中的列表
@@ -2128,12 +2134,18 @@ public partial class PageInstanceCompResource : IRefreshable
             {
                 var newItem = BuildLocalCompItem(newModEntity);
                 modItems[modEntity.RawPath] = newItem;
-                var indexOfUi = PanList.Children.IndexOf(PanList.Children.OfType<MyLocalCompItem>()
-                    .FirstOrDefault(i => ReferenceEquals(i.Entry, modEntity)));
-                if (indexOfUi == -1)
+                // 同路径的既有行（如两名并存时另一条目的行）一并移除，避免重复行残留
+                var staleIndexes = PanList.Children.OfType<MyLocalCompItem>()
+                    .Where(i => ReferenceEquals(i.Entry, modEntity) || i.Entry.Equals(newModEntity))
+                    .Select(i => PanList.Children.IndexOf(i))
+                    .Where(idx => idx >= 0)
+                    .OrderBy(idx => idx)
+                    .ToList();
+                if (staleIndexes.Count == 0)
                     continue; // 因为未知原因 Mod 的状态已经切换完了
-                PanList.Children.RemoveAt(indexOfUi);
-                PanList.Children.Insert(indexOfUi, newItem);
+                for (var i = staleIndexes.Count - 1; i >= 0; i--)
+                    PanList.Children.RemoveAt(staleIndexes[i]);
+                PanList.Children.Insert(Math.Min(staleIndexes[0], PanList.Children.Count), newItem);
             }
             catch (Exception ex)
             {
