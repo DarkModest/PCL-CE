@@ -319,9 +319,7 @@ public static class ModInstanceList
         foreach (var folder in new DirectoryInfo(path + "versions").GetDirectories())
         {
             var instanceFolder = folder.FullName + @"\";
-            // 跳过正在安装中的整合包实例：其尚未写入 version json，扫描会误判为“错误的实例”（#3666）。
-            // 需在空文件夹跳过之前处理：安装初期文件夹可能只有子目录，且缓存指纹已含该文件夹名，
-            // 置为无效以确保安装期间异常退出后，下次启动的全量重扫仍能处理该文件夹（#3666）
+            // 需在空文件夹判断之前：安装初期的文件夹可能只有子目录
             if (ModModpack.IsInstanceInstalling(instanceFolder))
             {
                 ModBase.Log("[Minecraft] 跳过正在安装中的整合包实例：" + instanceFolder);

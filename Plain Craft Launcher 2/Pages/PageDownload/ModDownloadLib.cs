@@ -3706,7 +3706,7 @@ public static class ModDownloadLib
             McInstallFailedClearFolder(loader);
         }
 
-        ModModpack.UnmarkInstanceInstalling((string)combo.input); // #3666 安装结束，解除安装中标记
+        ModModpack.UnmarkInstanceInstalling((string)combo.input);
         ModLoader.LoaderFolderRun(ModInstanceList.mcInstanceListLoader, ModFolder.mcFolderSelected,
             ModLoader.LoaderFolderRunType.ForceRun, 1, @"versions\");
     }

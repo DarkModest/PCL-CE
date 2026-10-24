@@ -85,7 +85,7 @@ public partial class PageDownloadCompDetail
             var loaders = new List<ModLoader.LoaderBase>();
             var target =
                 $@"{ModFolder.mcFolderSelected}versions\{instanceName}\原始整合包.{(_project.FromCurseForge ? "zip" : "mrpack")}";
-            // 捕获安装文件夹路径：解除标记时不能依赖当下的 mcFolderSelected（下载期间可能被更改）
+            // 捕获安装文件夹路径，解除标记时不能以当下的 mcFolderSelected 重拼
             var instanceFolder = $@"{ModFolder.mcFolderSelected}versions\{instanceName}\";
             var logoFileAddress = MyImage.GetTempPath(_compItem.Logo);
             loaders.Add(new LoaderDownload(Lang.Text("Download.Comp.Detail.DownloadModpackFile"),
@@ -96,8 +96,7 @@ public partial class PageDownloadCompDetail
             {
                 ModModpack.ModpackInstall(target, instanceName,
                     System.IO.File.Exists(logoFileAddress) ? logoFileAddress : null, file.ProjectId, true);
-                // 内层安装使用当下的 mcFolderSelected；若下载期间用户切换了游戏目录，
-                // 需显式释放旧目录上的下载标记，否则旧压缩包文件夹会被永久隐藏（#3666）
+                // 内层安装使用当下的游戏目录，切换过目录时释放旧目录的标记
                 if (instanceFolder != $@"{ModFolder.mcFolderSelected}versions\{instanceName}\")
                     ModModpack.UnmarkInstanceInstalling(instanceFolder);
             })
@@ -130,8 +129,7 @@ public partial class PageDownloadCompDetail
 
                     if (myLoader.State is ModBase.LoadState.Failed or ModBase.LoadState.Aborted)
                     {
-                        // 先清理实例文件夹，再解除安装中标记并强制重扫（#3666）：
-                        // 清理完成前文件夹仍存在，标记需保持有效以防期间的扫描误判
+                        // 清理完成后再解除标记，防止期间的扫描误判
                         ModDownloadLib.McInstallFailedClearFolder(myLoader);
                         ModModpack.UnmarkInstanceInstalling(instanceFolder);
                         ModLoader.LoaderFolderRun(ModInstanceList.mcInstanceListLoader, ModFolder.mcFolderSelected,
@@ -143,7 +141,6 @@ public partial class PageDownloadCompDetail
                     }
                 }
             };
-            // 压缩包直接下载到 versions\<实例名>\ 内，下载期间同样需要跳过实例列表扫描（#3666）
             ModModpack.MarkInstanceInstalling(instanceFolder);
             loader.Start(Path.Combine(ModFolder.mcFolderSelected, "versions", instanceName));
             ModLoader.LoaderTaskbarAdd(loader);

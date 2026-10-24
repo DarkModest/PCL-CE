@@ -18,14 +18,11 @@ public static class ModModpack
 {
     #region 安装中的整合包实例
 
-    // 正在安装的整合包实例文件夹（#3666）
     private static readonly HashSet<string> _InstallingInstances = new();
     private static readonly object _InstallingInstancesLock = new();
 
     /// <summary>
-    ///     标记整合包实例正在安装中。实例列表扫描会跳过该文件夹，
-    ///     避免尚未写入 version json 的半成品实例被误判为“错误的实例”（#3666）。
-    ///     文件夹路径需与 McInstance.PathInstance 一致（含末尾反斜杠）。
+    ///     标记整合包实例正在安装中，实例列表扫描将跳过该文件夹。
     /// </summary>
     public static void MarkInstanceInstalling(string instanceFolder)
     {
@@ -34,7 +31,7 @@ public static class ModModpack
     }
 
     /// <summary>
-    ///     移除整合包实例的安装中标记（安装结束或文件夹清理后调用）。
+    ///     移除整合包实例的安装中标记。
     /// </summary>
     public static void UnmarkInstanceInstalling(string instanceFolder)
     {
@@ -43,9 +40,7 @@ public static class ModModpack
     }
 
     /// <summary>
-    ///     检查整合包实例是否正在安装中。标记由安装结束回调显式解除
-    ///     （McInstallState 及下载失败清理路径），不按加载器状态自动清理，
-    ///     避免终态与文件夹清理完成之间的缝隙内被扫描误判（#3666）。
+    ///     检查整合包实例是否正在安装中。
     /// </summary>
     public static bool IsInstanceInstalling(string instanceFolder)
     {
@@ -688,7 +683,7 @@ public static class ModModpack
 
         // 启动
         var loader = new LoaderCombo<string>(loaderName, loaders) { OnStateChanged = ModDownloadLib.McInstallState };
-        MarkInstanceInstalling(request.targetInstanceFolder); // #3666 安装期间跳过实例列表扫描
+        MarkInstanceInstalling(request.targetInstanceFolder);
         loader.Start(request.targetInstanceFolder);
         LoaderTaskbarAdd(loader);
         ModMain.frmMain.BtnExtraDownload.ShowRefresh();
@@ -931,7 +926,7 @@ public static class ModModpack
 
         // 启动
         var loader = new LoaderCombo<string>(loaderName, loaders) { OnStateChanged = ModDownloadLib.McInstallState };
-        MarkInstanceInstalling(request.targetInstanceFolder); // #3666 安装期间跳过实例列表扫描
+        MarkInstanceInstalling(request.targetInstanceFolder);
         loader.Start(request.targetInstanceFolder);
         LoaderTaskbarAdd(loader);
         ModMain.frmMain.BtnExtraDownload.ShowRefresh();
@@ -1010,7 +1005,7 @@ public static class ModModpack
 
         // 启动
         var loader = new LoaderCombo<string>(loaderName, loaders) { OnStateChanged = ModDownloadLib.McInstallState };
-        MarkInstanceInstalling(request.targetInstanceFolder); // #3666 安装期间跳过实例列表扫描
+        MarkInstanceInstalling(request.targetInstanceFolder);
         loader.Start(request.targetInstanceFolder);
         LoaderTaskbarAdd(loader);
         ModMain.frmMain.BtnExtraDownload.ShowRefresh();
@@ -1158,7 +1153,7 @@ public static class ModModpack
         // 启动任务
         var loader = new LoaderCombo<string>(loaderName, loaders);
         loader.OnStateChanged = ModDownloadLib.McInstallState;
-        MarkInstanceInstalling(request.targetInstanceFolder); // #3666 安装期间跳过实例列表扫描
+        MarkInstanceInstalling(request.targetInstanceFolder);
 
         loader.Start(request.targetInstanceFolder);
         LoaderTaskbarAdd(loader);
@@ -1806,7 +1801,7 @@ public static class ModModpack
 
         // 启动
         var loader = new LoaderCombo<string>(loaderName, loaders) { OnStateChanged = ModDownloadLib.McInstallState };
-        MarkInstanceInstalling(request.targetInstanceFolder); // #3666 安装期间跳过实例列表扫描
+        MarkInstanceInstalling(request.targetInstanceFolder);
         loader.Start(request.targetInstanceFolder);
         LoaderTaskbarAdd(loader);
         ModMain.frmMain.BtnExtraDownload.ShowRefresh();
