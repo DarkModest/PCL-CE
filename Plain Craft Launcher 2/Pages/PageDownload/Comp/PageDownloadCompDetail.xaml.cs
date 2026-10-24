@@ -85,6 +85,8 @@ public partial class PageDownloadCompDetail
             var loaders = new List<ModLoader.LoaderBase>();
             var target =
                 $@"{ModFolder.mcFolderSelected}versions\{instanceName}\原始整合包.{(_project.FromCurseForge ? "zip" : "mrpack")}";
+            // 捕获安装文件夹路径：解除标记时不能依赖当下的 mcFolderSelected（下载期间可能被更改）
+            var instanceFolder = $@"{ModFolder.mcFolderSelected}versions\{instanceName}\";
             var logoFileAddress = MyImage.GetTempPath(_compItem.Logo);
             loaders.Add(new LoaderDownload(Lang.Text("Download.Comp.Detail.DownloadModpackFile"),
                     new List<DownloadFile> { file.ToNetFile(target, ModComp.DownloadReason.ModPack) })
@@ -120,14 +122,22 @@ public partial class PageDownloadCompDetail
                     }
 
                     if (myLoader.State is ModBase.LoadState.Failed or ModBase.LoadState.Aborted)
-                        // 下载失败或取消后实例文件夹会被清理，同步解除安装中标记（#3666）
-                        ModModpack.UnmarkInstanceInstalling(
-                            $@"{ModFolder.mcFolderSelected}versions\{instanceName}\");
-                    ModDownloadLib.McInstallFailedClearFolder(myLoader);
+                    {
+                        // 先清理实例文件夹，再解除安装中标记并强制重扫（#3666）：
+                        // 清理完成前文件夹仍存在，标记需保持有效以防期间的扫描误判
+                        ModDownloadLib.McInstallFailedClearFolder(myLoader);
+                        ModModpack.UnmarkInstanceInstalling(instanceFolder);
+                        ModLoader.LoaderFolderRun(ModInstanceList.mcInstanceListLoader, ModFolder.mcFolderSelected,
+                            ModLoader.LoaderFolderRunType.ForceRun, 1, @"versions\");
+                    }
+                    else
+                    {
+                        ModDownloadLib.McInstallFailedClearFolder(myLoader);
+                    }
                 }
             };
             // 压缩包直接下载到 versions\<实例名>\ 内，下载期间同样需要跳过实例列表扫描（#3666）
-            ModModpack.MarkInstanceInstalling($@"{ModFolder.mcFolderSelected}versions\{instanceName}\", loader);
+            ModModpack.MarkInstanceInstalling(instanceFolder);
             loader.Start(Path.Combine(ModFolder.mcFolderSelected, "versions", instanceName));
             ModLoader.LoaderTaskbarAdd(loader);
             ModMain.frmMain.BtnExtraDownload.ShowRefresh();
