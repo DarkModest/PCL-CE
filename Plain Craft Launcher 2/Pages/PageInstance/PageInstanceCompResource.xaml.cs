@@ -2106,23 +2106,31 @@ public partial class PageInstanceCompResource : IRefreshable
             }
 
             // 更改 Loader 中的列表
+            // 采纳现状（原文件已缺失）时新实体不能继承缺失源的元数据（否则更新可能误删幸存文件），
+            // 让其按自身文件惰性加载
+            var adopting = !File.Exists(modEntity.path);
             var newModEntity = new ModLocalComp.LocalCompFile(newPath);
-            newModEntity.FromJson(modEntity.ToJson());
-            newModEntity.CopyLoadedStateFrom(modEntity); // 仅改名未改内容，复用已解析元数据，免得 UI 线程重新解压
-            // 采纳现状时若列表已有同路径条目（如扫描时两名并存、外部仅删除其一），
-            // 它承载着幸存文件的完整元数据，应保留它并仅移除过期源条目，避免用缺失源的信息覆盖
-            var keepExistingTarget = !File.Exists(modEntity.path) &&
-                                     ModLocalComp.compResourceListLoader.output.Contains(newModEntity);
-            if (ModLocalComp.compResourceListLoader.output.Contains(modEntity))
+            if (!adopting)
             {
-                var indexOfLoader = ModLocalComp.compResourceListLoader.output.IndexOf(modEntity);
-                ModLocalComp.compResourceListLoader.output.RemoveAt(indexOfLoader);
+                // 同一文件仅改名：复用已解析元数据，免得 UI 线程重新解压
+                newModEntity.FromJson(modEntity.ToJson());
+                newModEntity.CopyLoadedStateFrom(modEntity);
+            }
+            var output = ModLocalComp.compResourceListLoader.output;
+            // 采纳现状时若列表已有同路径条目（Windows 路径不分大小写，如扫描时两名并存、外部仅删除其一），
+            // 它承载着幸存文件的完整元数据，应保留它并仅移除过期源条目
+            var keepExistingTarget = adopting && output.Any(e =>
+                string.Equals(e.path, newModEntity.path, StringComparison.OrdinalIgnoreCase));
+            if (output.Contains(modEntity))
+            {
+                var indexOfLoader = output.IndexOf(modEntity);
+                output.RemoveAt(indexOfLoader);
                 if (!keepExistingTarget)
                 {
-                    while (ModLocalComp.compResourceListLoader.output.Contains(newModEntity))
-                        ModLocalComp.compResourceListLoader.output.Remove(newModEntity);
-                    ModLocalComp.compResourceListLoader.output.Insert(
-                        Math.Min(indexOfLoader, ModLocalComp.compResourceListLoader.output.Count), newModEntity);
+                    for (var i = output.Count - 1; i >= 0; i--)
+                        if (string.Equals(output[i].path, newModEntity.path, StringComparison.OrdinalIgnoreCase))
+                            output.RemoveAt(i);
+                    output.Insert(Math.Min(indexOfLoader, output.Count), newModEntity);
                 }
             }
 
@@ -2132,8 +2140,9 @@ public partial class PageInstanceCompResource : IRefreshable
                 searchResult.Remove(modEntity);
                 if (!keepExistingTarget)
                 {
-                    while (searchResult.Contains(newModEntity))
-                        searchResult.Remove(newModEntity);
+                    for (var i = searchResult.Count - 1; i >= 0; i--)
+                        if (string.Equals(searchResult[i].path, newModEntity.path, StringComparison.OrdinalIgnoreCase))
+                            searchResult.RemoveAt(i);
                     searchResult.Insert(Math.Min(indexOfResult, searchResult.Count), newModEntity);
                 }
             }
@@ -2141,33 +2150,40 @@ public partial class PageInstanceCompResource : IRefreshable
             // 更改 UI 中的列表
             try
             {
+                var indexOfUi = PanList.Children.IndexOf(PanList.Children.OfType<MyLocalCompItem>()
+                    .FirstOrDefault(i => ReferenceEquals(i.Entry, modEntity)));
                 if (keepExistingTarget)
                 {
-                    var existingEntity = ModLocalComp.compResourceListLoader.output
-                        .FirstOrDefault(e => e.Equals(newModEntity));
-                    if (existingEntity is not null)
-                    {
-                        var existingItem = BuildLocalCompItem(existingEntity);
-                        modItems[modEntity.RawPath] = existingItem;
-                        var oldRowIndexes = PanList.Children.OfType<MyLocalCompItem>()
-                            .Where(i => ReferenceEquals(i.Entry, modEntity) || ReferenceEquals(i.Entry, existingEntity))
-                            .Select(i => PanList.Children.IndexOf(i))
-                            .Where(idx => idx >= 0)
-                            .OrderBy(idx => idx)
-                            .ToList();
-                        var insertAt = oldRowIndexes.Count > 0 ? oldRowIndexes[0] : PanList.Children.Count;
-                        for (var i = oldRowIndexes.Count - 1; i >= 0; i--)
-                            PanList.Children.RemoveAt(oldRowIndexes[i]);
-                        PanList.Children.Insert(Math.Min(insertAt, PanList.Children.Count), existingItem);
-                    }
+                    // 保留既有同路径条目的 UI（其元数据对应幸存文件）；过期源条目对应文件已缺失，移除其行
+                    var existingEntity = output.FirstOrDefault(e =>
+                        string.Equals(e.path, newModEntity.path, StringComparison.OrdinalIgnoreCase)) ?? newModEntity;
+                    var existingItem = BuildLocalCompItem(existingEntity);
+                    foreach (var key in modItems.Keys.Where(k =>
+                                 string.Equals(k, modEntity.RawPath, StringComparison.OrdinalIgnoreCase)).ToList())
+                        modItems.Remove(key);
+                    modItems[existingEntity.RawPath] = existingItem;
+                    var oldRowIndexes = PanList.Children.OfType<MyLocalCompItem>()
+                        .Where(i => ReferenceEquals(i.Entry, modEntity) || ReferenceEquals(i.Entry, existingEntity))
+                        .Select(i => PanList.Children.IndexOf(i))
+                        .Where(idx => idx >= 0)
+                        .OrderBy(idx => idx)
+                        .ToList();
+                    var insertAt = oldRowIndexes.Count > 0 ? oldRowIndexes[0] : PanList.Children.Count;
+                    for (var i = oldRowIndexes.Count - 1; i >= 0; i--)
+                        PanList.Children.RemoveAt(oldRowIndexes[i]);
+                    PanList.Children.Insert(Math.Min(insertAt, PanList.Children.Count), existingItem);
                     continue;
                 }
 
                 var newItem = BuildLocalCompItem(newModEntity);
-                modItems[modEntity.RawPath] = newItem;
-                // 同路径的既有行（如两名并存时另一条目的行）一并移除，避免重复行残留
+                foreach (var key in modItems.Keys.Where(k =>
+                             string.Equals(k, newModEntity.RawPath, StringComparison.OrdinalIgnoreCase)).ToList())
+                    modItems.Remove(key);
+                modItems[newModEntity.RawPath] = newItem;
+                // 同路径的既有行（如两名并存时另一条目的行，Windows 下不分大小写）一并移除，避免重复行残留
                 var staleIndexes = PanList.Children.OfType<MyLocalCompItem>()
-                    .Where(i => ReferenceEquals(i.Entry, modEntity) || i.Entry.Equals(newModEntity))
+                    .Where(i => ReferenceEquals(i.Entry, modEntity) ||
+                                string.Equals(i.Entry.path, newModEntity.path, StringComparison.OrdinalIgnoreCase))
                     .Select(i => PanList.Children.IndexOf(i))
                     .Where(idx => idx >= 0)
                     .OrderBy(idx => idx)
@@ -2446,17 +2462,32 @@ public partial class PageInstanceCompResource : IRefreshable
             // 确认需要删除的文件
             // 文件夹只需要删除自身
             // 条目的状态可能已过期（如外部把文件改名到 .disabled/.old），全部后缀变体纳入候选，
-            // 由下方 File.Exists 过滤出真实存在的文件
+            // 由下方 File.Exists 过滤出真实存在的文件。
+            // 注意只能剥离"终结"后缀：RawFileName 的全局 Replace 会把 foo.old.jar 这类
+            // 名字中间含 .old 的文件错误还原成 foo.jar，导致删除时误伤同名无关文件
+            static IEnumerable<string> DeleteCandidates(string path)
+            {
+                yield return path;
+                yield return path + ".old";
+                yield return path + ".disabled";
+                var stripped = path.EndsWith(".old", StringComparison.OrdinalIgnoreCase)
+                    ? path.Substring(0, path.Length - 4)
+                    : path.EndsWith(".disabled", StringComparison.OrdinalIgnoreCase)
+                        ? path.Substring(0, path.Length - 9)
+                        : null;
+                if (stripped is not null)
+                {
+                    yield return stripped;
+                    yield return stripped + ".old";
+                    yield return stripped + ".disabled";
+                }
+            }
+
             modList = modList.SelectMany(target =>
                 {
                     if (target.IsFolder) return new[] { target.path };
 
-                    return new[]
-                    {
-                        target.path, target.RawPath,
-                        target.path + ".old", target.path + ".disabled",
-                        target.RawPath + ".old", target.RawPath + ".disabled"
-                    };
+                    return DeleteCandidates(target.path);
                 }).Distinct()
                 .Where(m => m.EndsWithF(@"\__FOLDER__", true)
                     ? Directory.Exists(m.Replace(@"\__FOLDER__", ""))
