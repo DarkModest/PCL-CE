@@ -92,9 +92,16 @@ public partial class PageDownloadCompDetail
                     new List<DownloadFile> { file.ToNetFile(target, ModComp.DownloadReason.ModPack) })
                 { ProgressWeight = 10d, block = true });
             loaders.Add(new ModLoader.LoaderTask<int, int>(Lang.Text("Download.Comp.Detail.PrepareModpackInstall"),
-                _ => ModModpack.ModpackInstall(target, instanceName,
-                    System.IO.File.Exists(logoFileAddress) ? logoFileAddress : null, file.ProjectId,
-                    true)) { ProgressWeight = 0.1d });
+                _ =>
+            {
+                ModModpack.ModpackInstall(target, instanceName,
+                    System.IO.File.Exists(logoFileAddress) ? logoFileAddress : null, file.ProjectId, true);
+                // 内层安装使用当下的 mcFolderSelected；若下载期间用户切换了游戏目录，
+                // 需显式释放旧目录上的下载标记，否则旧压缩包文件夹会被永久隐藏（#3666）
+                if (instanceFolder != $@"{ModFolder.mcFolderSelected}versions\{instanceName}\")
+                    ModModpack.UnmarkInstanceInstalling(instanceFolder);
+            })
+            { ProgressWeight = 0.1d });
 
             // 启动
             var loader = new ModLoader.LoaderCombo<string>(loaderName, loaders)
