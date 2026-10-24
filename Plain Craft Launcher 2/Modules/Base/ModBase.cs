@@ -2853,7 +2853,6 @@ public static class ModBase
             Log("[System] 正在打开资源管理器：" + location);
             if (!location.EndsWithF(@"\") && !File.Exists(location) && !Directory.Exists(location))
             {
-                // 目标不存在（可能已被外部改名/删除）：explorer /select 会落到错误位置，回退为打开所在文件夹
                 var parent = GetPathFromFullPath(location);
                 if (Directory.Exists(parent))
                 {

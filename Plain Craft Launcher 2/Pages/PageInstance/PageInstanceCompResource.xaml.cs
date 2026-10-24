@@ -532,6 +532,8 @@ public partial class PageInstanceCompResource : IRefreshable
                     TxtEmptyDescription.Text = Lang.Text("Instance.Resource.Empty.DescriptionWithDownload");
                 }
 
+                modItems.Clear(); // 空目录同样清空缓存，避免计数残留
+
                 // 如果当前在子文件夹中，显示返回上一级按钮
                 if (!string.IsNullOrEmpty(CurrentFolderPath))
                     BtnHintBack.Visibility = Visibility.Visible;
@@ -2024,6 +2026,7 @@ public partial class PageInstanceCompResource : IRefreshable
     private bool EDModsCore(IEnumerable<ModLocalComp.LocalCompFile> modList, bool isEnable)
     {
         var isSuccessful = true;
+        var adoptedNeedsReload = false;
         foreach (var ModE in modList)
         {
             var modEntity = ModE; // 仅用于去除迭代变量无法修改的限制
@@ -2065,28 +2068,26 @@ public partial class PageInstanceCompResource : IRefreshable
             {
                 if (File.Exists(newPath) && !File.Exists(modEntity.path))
                 {
-                    // 目标已存在而原名缺失：磁盘已处于目标状态（可能被外部改名），直接采纳，无需重命名
                     ModBase.Log("[Mod] 目标文件已存在而原文件缺失，采纳现状：" + newPath,
                         ModBase.LogLevel.Developer);
+                    adoptedNeedsReload = true;
+                    continue;
                 }
-                else
+                if (File.Exists(newPath))
                 {
-                    if (File.Exists(newPath))
+                    // 同时存在两个名称的 Mod
+                    if ((ModBase.GetFileMD5(modEntity.path) ?? "") != (ModBase.GetFileMD5(newPath) ?? ""))
                     {
-                        // 同时存在两个名称的 Mod
-                        if ((ModBase.GetFileMD5(modEntity.path) ?? "") != (ModBase.GetFileMD5(newPath) ?? ""))
-                        {
-                            ModMain.MyMsgBox(
-                                Lang.Text("Instance.Resource.Ed.FileConflict.Message", newPath, modEntity.path),
-                                Lang.Text("Instance.Resource.Ed.FileConflict"));
-                            isSuccessful = false;
-                            continue;
-                        }
+                        ModMain.MyMsgBox(
+                            Lang.Text("Instance.Resource.Ed.FileConflict.Message", newPath, modEntity.path),
+                            Lang.Text("Instance.Resource.Ed.FileConflict"));
+                        isSuccessful = false;
+                        continue;
                     }
-
-                    File.Delete(newPath);
-                    FileSystem.Rename(modEntity.path, newPath);
                 }
+
+                File.Delete(newPath);
+                FileSystem.Rename(modEntity.path, newPath);
             }
             catch (FileNotFoundException ex)
             {
@@ -2106,81 +2107,38 @@ public partial class PageInstanceCompResource : IRefreshable
             }
 
             // 更改 Loader 中的列表
-            // 采纳现状（原文件已缺失）时新实体不能继承缺失源的元数据（否则更新可能误删幸存文件），
-            // 让其按自身文件惰性加载
-            var adopting = !File.Exists(modEntity.path);
             var newModEntity = new ModLocalComp.LocalCompFile(newPath);
-            if (!adopting)
-            {
-                // 同一文件仅改名：复用已解析元数据，免得 UI 线程重新解压
-                newModEntity.FromJson(modEntity.ToJson());
-                newModEntity.CopyLoadedStateFrom(modEntity);
-            }
+            newModEntity.FromJson(modEntity.ToJson());
+            newModEntity.CopyLoadedStateFrom(modEntity); // 仅改名未改内容，复用已解析元数据，免得 UI 线程重新解压
             var output = ModLocalComp.compResourceListLoader.output;
-            // 采纳现状时若列表已有同路径条目（Windows 路径不分大小写，如扫描时两名并存、外部仅删除其一），
-            // 它承载着幸存文件的完整元数据，应保留它并仅移除过期源条目
-            var keepExistingTarget = adopting && output.Any(e =>
-                string.Equals(e.path, newModEntity.path, StringComparison.OrdinalIgnoreCase));
             if (output.Contains(modEntity))
             {
                 var indexOfLoader = output.IndexOf(modEntity);
                 output.RemoveAt(indexOfLoader);
-                if (!keepExistingTarget)
-                {
-                    for (var i = output.Count - 1; i >= 0; i--)
-                        if (string.Equals(output[i].path, newModEntity.path, StringComparison.OrdinalIgnoreCase))
-                            output.RemoveAt(i);
-                    output.Insert(Math.Min(indexOfLoader, output.Count), newModEntity);
-                }
+                for (var i = output.Count - 1; i >= 0; i--)
+                    if (string.Equals(output[i].path, newModEntity.path, StringComparison.OrdinalIgnoreCase))
+                        output.RemoveAt(i);
+                output.Insert(Math.Min(indexOfLoader, output.Count), newModEntity);
             }
 
             if (searchResult is not null && searchResult.Contains(modEntity)) // #4862
             {
                 var indexOfResult = searchResult.IndexOf(modEntity);
                 searchResult.Remove(modEntity);
-                if (!keepExistingTarget)
-                {
-                    for (var i = searchResult.Count - 1; i >= 0; i--)
-                        if (string.Equals(searchResult[i].path, newModEntity.path, StringComparison.OrdinalIgnoreCase))
-                            searchResult.RemoveAt(i);
-                    searchResult.Insert(Math.Min(indexOfResult, searchResult.Count), newModEntity);
-                }
+                for (var i = searchResult.Count - 1; i >= 0; i--)
+                    if (string.Equals(searchResult[i].path, newModEntity.path, StringComparison.OrdinalIgnoreCase))
+                        searchResult.RemoveAt(i);
+                searchResult.Insert(Math.Min(indexOfResult, searchResult.Count), newModEntity);
             }
 
             // 更改 UI 中的列表
             try
             {
-                var indexOfUi = PanList.Children.IndexOf(PanList.Children.OfType<MyLocalCompItem>()
-                    .FirstOrDefault(i => ReferenceEquals(i.Entry, modEntity)));
-                if (keepExistingTarget)
-                {
-                    // 保留既有同路径条目的 UI（其元数据对应幸存文件）；过期源条目对应文件已缺失，移除其行
-                    var existingEntity = output.FirstOrDefault(e =>
-                        string.Equals(e.path, newModEntity.path, StringComparison.OrdinalIgnoreCase)) ?? newModEntity;
-                    var existingItem = BuildLocalCompItem(existingEntity);
-                    foreach (var key in modItems.Keys.Where(k =>
-                                 string.Equals(k, modEntity.RawPath, StringComparison.OrdinalIgnoreCase)).ToList())
-                        modItems.Remove(key);
-                    modItems[existingEntity.RawPath] = existingItem;
-                    var oldRowIndexes = PanList.Children.OfType<MyLocalCompItem>()
-                        .Where(i => ReferenceEquals(i.Entry, modEntity) || ReferenceEquals(i.Entry, existingEntity))
-                        .Select(i => PanList.Children.IndexOf(i))
-                        .Where(idx => idx >= 0)
-                        .OrderBy(idx => idx)
-                        .ToList();
-                    var insertAt = oldRowIndexes.Count > 0 ? oldRowIndexes[0] : PanList.Children.Count;
-                    for (var i = oldRowIndexes.Count - 1; i >= 0; i--)
-                        PanList.Children.RemoveAt(oldRowIndexes[i]);
-                    PanList.Children.Insert(Math.Min(insertAt, PanList.Children.Count), existingItem);
-                    continue;
-                }
-
                 var newItem = BuildLocalCompItem(newModEntity);
                 foreach (var key in modItems.Keys.Where(k =>
                              string.Equals(k, newModEntity.RawPath, StringComparison.OrdinalIgnoreCase)).ToList())
                     modItems.Remove(key);
                 modItems[newModEntity.RawPath] = newItem;
-                // 同路径的既有行（如两名并存时另一条目的行，Windows 下不分大小写）一并移除，避免重复行残留
                 var staleIndexes = PanList.Children.OfType<MyLocalCompItem>()
                     .Where(i => ReferenceEquals(i.Entry, modEntity) ||
                                 string.Equals(i.Entry.path, newModEntity.path, StringComparison.OrdinalIgnoreCase))
@@ -2204,6 +2162,12 @@ public partial class PageInstanceCompResource : IRefreshable
             }
         }
 
+        if (adoptedNeedsReload)
+        {
+            ReloadCompFileList(true);
+            LoaderRun(ModLoader.LoaderFolderRunType.UpdateOnly);
+            return true;
+        }
         Dispatcher.Invoke(() => PanList.UpdateLayout(), DispatcherPriority.Background);
         if (isSuccessful)
         {
@@ -2444,27 +2408,8 @@ public partial class PageInstanceCompResource : IRefreshable
         try
         {
             var isSuccessful = true;
-            // 文件已被外部改名/删除的过期条目：其 path 与实际待删文件（如 .disabled）不再一致，
-            // 下方按路径重建的实体会与显示条目匹配失败，导致文件删除后 UI 行残留。先按原始引用清理。
-            foreach (var target in modList.Where(t =>
-                         t.IsFolder ? !Directory.Exists(t.ActualPath) : !File.Exists(t.path)).ToList())
-            {
-                ModLocalComp.compResourceListLoader.output.Remove(target);
-                searchResult?.Remove(target);
-                modItems.Remove(target.RawPath);
-                selectedMods.Remove(target.RawPath);
-                var indexOfStale = PanList.Children.IndexOf(PanList.Children.OfType<MyLocalCompItem>()
-                    .FirstOrDefault(i => ReferenceEquals(i.Entry, target)));
-                if (indexOfStale >= 0)
-                    PanList.Children.RemoveAt(indexOfStale);
-            }
-
             // 确认需要删除的文件
             // 文件夹只需要删除自身
-            // 条目的状态可能已过期（如外部把文件改名到 .disabled/.old），全部后缀变体纳入候选，
-            // 由下方 File.Exists 过滤出真实存在的文件。
-            // 注意只能剥离"终结"后缀：RawFileName 的全局 Replace 会把 foo.old.jar 这类
-            // 名字中间含 .old 的文件错误还原成 foo.jar，导致删除时误伤同名无关文件
             static IEnumerable<string> DeleteCandidates(string path)
             {
                 yield return path;
@@ -2537,30 +2482,11 @@ public partial class PageInstanceCompResource : IRefreshable
 
                 // 取消选中
                 selectedMods.Remove(ModEntity.RawPath);
-                // 更改 Loader 和 UI 中的列表
-                ModLocalComp.compResourceListLoader.output.Remove(ModEntity);
-                searchResult?.Remove(ModEntity);
-                modItems.Remove(ModEntity.RawPath);
-                var indexOfUi = PanList.Children.IndexOf(PanList.Children.OfType<MyLocalCompItem>()
-                    .FirstOrDefault(i => i.Entry.Equals(ModEntity)));
-                if (indexOfUi >= 0)
-                    PanList.Children.RemoveAt(indexOfUi);
             }
 
-            RefreshBars();
+            ReloadCompFileList(true);
             if (!isSuccessful)
-            {
                 HintService.Hint(Lang.Text("Instance.Resource.Delete.Failed"), HintType.Error);
-                ReloadCompFileList(true);
-            }
-            else if (PanList.Children.Count == 0)
-            {
-                ReloadCompFileList(true); // 删除了全部项目
-            }
-            else
-            {
-                RefreshBars();
-            }
 
             // 显示结果提示
             if (!isSuccessful)
