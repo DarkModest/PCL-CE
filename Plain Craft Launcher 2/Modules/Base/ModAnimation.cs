@@ -19,7 +19,7 @@ public static partial class ModAnimation
     private static long aniFPSTimer;
 
     /// <summary>
-    ///     当前动画帧率上限缓存，由配置变更事件更新，避免动画线程轮询配置服务。
+    ///     当前动画帧率上限缓存，由配置变更事件更新。
     /// </summary>
     private static volatile int aniFpsLimit;
 
@@ -38,7 +38,6 @@ public static partial class ModAnimation
         aniFPSTimer = aniLastTick;
         aniRunning = true; // 标记动画执行开始
 
-        // 缓存帧率上限并通过配置变更事件即时更新，使动画循环不必反复读取配置服务
         aniFpsLimit = Config.System.AnimationFpsLimit;
         Config.System.AnimationFpsLimitConfig.Observe(new ConfigObserver(ConfigEvent.Changed,
             _ => aniFpsLimit = Config.System.AnimationFpsLimit));
@@ -50,9 +49,7 @@ public static partial class ModAnimation
                 ModBase.Log("[Animation] 动画线程开始");
                 while (true)
                 {
-                    // 从缓存读取帧率限制（经配置事件即时更新），设置修改后无需重启。
-                    // 除以 2 是对 Sleep 粒度与 UI 派发延迟的历史补偿，去掉会使所有用户的实际帧率减半，
-                    // 实际帧率约为标称值的 1～2 倍，请勿“修正”此处（详见 PR #3689 的讨论）。
+                    // 除以 2 是对 Sleep 粒度与 UI 派发延迟的补偿，去掉会使实际帧率减半，请勿修正
                     var minFrameGap = 1000d / (aniFpsLimit + 1) / 2;
 
                     // 两帧之间的间隔时间
