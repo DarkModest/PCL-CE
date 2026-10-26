@@ -63,7 +63,6 @@ public static partial class ModAnimation
                     // 按标称帧率计算最小帧间隔；勿恢复 /2（那是 TickCount64 量化时代的补偿）
                     var minFrameGap = 1000d / (aniFpsLimit + 1);
 
-                    // 用高精度时间戳计算帧间隔：TickCount64 约 15.6ms 才更新一次，会把帧率钉在约 64fps
                     var deltaMs = (FrameUtils.NowStamp() - aniLastStamp) * 1000d / FrameUtils.Frequency;
                     if (deltaMs < minFrameGap)
                     {
@@ -73,7 +72,6 @@ public static partial class ModAnimation
                     }
 
                     aniLastStamp = FrameUtils.NowStamp();
-                    // 累积缩放后的小数毫秒，避免逐帧取整造成动画时长漂移甚至停滞
                     aniDeltaRemainder += ModBase.MathClamp(deltaMs, 0d, 100000d) * aniSpeed;
                     var deltaTick = (int)aniDeltaRemainder;
                     aniDeltaRemainder -= deltaTick;
@@ -84,7 +82,6 @@ public static partial class ModAnimation
                         var fpsWindow = aniLastTick - aniFPSTimer;
                         if (fpsWindow >= 500)
                         {
-                            // 计数器每帧 +2，乘以 500/窗口毫秒数即为每秒帧数
                             aniFPS = (int)Math.Round(aniFPSCounter * 500d / fpsWindow);
                             aniFPSCounter = 0;
                             aniFPSTimer = aniLastTick;
