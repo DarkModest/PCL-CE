@@ -39,6 +39,22 @@ public static partial class ModAnimation
     public static int aniFPS;
 
     /// <summary>
+    ///     安全读取动画帧率上限，配置异常时回退默认值，避免阻止动画循环启动。
+    /// </summary>
+    private static int GetAniFpsLimitSafe()
+    {
+        try
+        {
+            return Config.System.AnimationFpsLimit;
+        }
+        catch (Exception ex)
+        {
+            ModBase.Log(ex, "读取动画帧率上限失败，使用默认值");
+            return Config.System.AnimationFpsLimitConfig.DefaultValue;
+        }
+    }
+
+    /// <summary>
     ///     开始动画执行。
     /// </summary>
     public static void AniStart()
@@ -49,9 +65,9 @@ public static partial class ModAnimation
         aniLastStamp = FrameUtils.NowStamp();
         aniRunning = true; // 标记动画执行开始
 
-        aniFpsLimit = Config.System.AnimationFpsLimit;
+        aniFpsLimit = GetAniFpsLimitSafe();
         Config.System.AnimationFpsLimitConfig.Observe(new ConfigObserver(ConfigEvent.Changed,
-            _ => aniFpsLimit = Config.System.AnimationFpsLimit));
+            _ => aniFpsLimit = GetAniFpsLimitSafe()));
 
         ModBase.RunInNewThread(() =>
         {
