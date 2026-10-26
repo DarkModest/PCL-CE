@@ -45,7 +45,8 @@ public static partial class ModAnimation
     {
         try
         {
-            return Config.System.AnimationFpsLimit;
+            // 钳制到滑块支持的范围，防止越界值导致间隔无穷大或加法溢出
+            return Math.Clamp(Config.System.AnimationFpsLimit, 0, 239);
         }
         catch (Exception ex)
         {
