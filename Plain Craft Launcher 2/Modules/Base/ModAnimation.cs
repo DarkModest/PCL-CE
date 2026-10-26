@@ -24,6 +24,11 @@ public static partial class ModAnimation
     private static long aniLastStamp;
 
     /// <summary>
+    ///     缩放后小数毫秒的累积余量，避免逐帧取整导致动画时长漂移或停滞。
+    /// </summary>
+    private static double aniDeltaRemainder;
+
+    /// <summary>
     ///     当前动画帧率上限缓存，由配置变更事件更新。
     /// </summary>
     private static volatile int aniFpsLimit;
@@ -68,14 +73,19 @@ public static partial class ModAnimation
                     }
 
                     aniLastStamp = FrameUtils.NowStamp();
-                    var deltaTime = (long)Math.Round(ModBase.MathClamp(deltaMs, 0, 100000));
+                    // 累积缩放后的小数毫秒，避免逐帧取整造成动画时长漂移甚至停滞
+                    aniDeltaRemainder += ModBase.MathClamp(deltaMs, 0d, 100000d) * aniSpeed;
+                    var deltaTick = (int)aniDeltaRemainder;
+                    aniDeltaRemainder -= deltaTick;
                     aniLastTick = TimeUtils.GetTimeTick();
                     // 记录 FPS
                     if (ModBase.modeDebug)
                     {
-                        if (ModBase.MathClamp(aniLastTick - aniFPSTimer, 0d, 100000d) >= 500d)
+                        var fpsWindow = aniLastTick - aniFPSTimer;
+                        if (fpsWindow >= 500)
                         {
-                            aniFPS = aniFPSCounter;
+                            // 计数器每帧 +2，乘以 500/窗口毫秒数即为每秒帧数
+                            aniFPS = (int)Math.Round(aniFPSCounter * 500d / fpsWindow);
                             aniFPSCounter = 0;
                             aniFPSTimer = aniLastTick;
                         }
@@ -87,7 +97,7 @@ public static partial class ModAnimation
                     ModBase.RunInUiWait(() =>
                     {
                         aniCount = 0;
-                        AniTimer((int)Math.Round(deltaTime * aniSpeed));
+                        AniTimer(deltaTick);
                         // #If DEBUG Then
                         // FrmMain.Title = "F " & AniFPS & ", A " & AniCount & ", R " & NetManage.FileRemain
                         // #Else
@@ -1514,7 +1524,11 @@ public static partial class ModAnimation
     public static void AniStart(IList aniGroup, string name = "", bool refreshTime = false)
     {
         if (refreshTime)
-            aniLastTick = TimeUtils.GetTimeTick(); // 避免处理动画时已经造成了极大的延迟，导致动画突然结束
+        {
+            // 避免处理动画时已经造成了极大的延迟，导致动画突然结束
+            aniLastTick = TimeUtils.GetTimeTick();
+            aniLastStamp = FrameUtils.NowStamp();
+        }
         // 添加到正在执行的动画组
         var newEntry = new AniGroupEntry
             { data = ModBase.GetFullList<AniData>(aniGroup), startTick = TimeUtils.GetTimeTick() };
