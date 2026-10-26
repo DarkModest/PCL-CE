@@ -19,6 +19,11 @@ public static partial class ModAnimation
     private static long aniFPSTimer;
 
     /// <summary>
+    ///     上一帧的高精度时间戳（<see cref="FrameUtils.NowStamp"/>），仅用于帧间隔计算。
+    /// </summary>
+    private static long aniLastStamp;
+
+    /// <summary>
     ///     当前动画帧率上限缓存，由配置变更事件更新。
     /// </summary>
     private static volatile int aniFpsLimit;
@@ -36,6 +41,7 @@ public static partial class ModAnimation
         // 初始化计时器
         aniLastTick = TimeUtils.GetTimeTick();
         aniFPSTimer = aniLastTick;
+        aniLastStamp = FrameUtils.NowStamp();
         aniRunning = true; // 标记动画执行开始
 
         aniFpsLimit = Config.System.AnimationFpsLimit;
@@ -49,19 +55,20 @@ public static partial class ModAnimation
                 ModBase.Log("[Animation] 动画线程开始");
                 while (true)
                 {
-                    // 除以 2 是对 Sleep 粒度与 UI 派发延迟的补偿，去掉会使实际帧率减半，请勿修正
-                    var minFrameGap = 1000d / (aniFpsLimit + 1) / 2;
+                    // 按标称帧率计算最小帧间隔；勿恢复 /2（那是 TickCount64 量化时代的补偿）
+                    var minFrameGap = 1000d / (aniFpsLimit + 1);
 
-                    // 两帧之间的间隔时间
-                    var deltaTime =
-                        (long)Math.Round(ModBase.MathClamp(TimeUtils.GetTimeTick() - aniLastTick, 0, 100000));
-                    if (deltaTime < minFrameGap)
+                    // 用高精度时间戳计算帧间隔：TickCount64 约 15.6ms 才更新一次，会把帧率钉在约 64fps
+                    var deltaMs = (FrameUtils.NowStamp() - aniLastStamp) * 1000d / FrameUtils.Frequency;
+                    if (deltaMs < minFrameGap)
                     {
                         // 限制 FPS
                         Thread.Sleep(1);
                         continue;
                     }
 
+                    aniLastStamp = FrameUtils.NowStamp();
+                    var deltaTime = (long)Math.Round(ModBase.MathClamp(deltaMs, 0, 100000));
                     aniLastTick = TimeUtils.GetTimeTick();
                     // 记录 FPS
                     if (ModBase.modeDebug)
