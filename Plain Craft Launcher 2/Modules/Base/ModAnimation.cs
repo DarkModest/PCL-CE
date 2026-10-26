@@ -1,5 +1,6 @@
 ﻿using System.Collections;
 using System.Collections.Concurrent;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
@@ -38,6 +39,9 @@ public static partial class ModAnimation
     /// </summary>
     public static int aniFPS;
 
+    [LibraryImport("winmm.dll", EntryPoint = "timeBeginPeriod")]
+    private static partial int _TimeBeginPeriod(int period);
+
     /// <summary>
     ///     安全读取动画帧率上限，配置异常时回退默认值，避免阻止动画循环启动。
     /// </summary>
@@ -65,6 +69,9 @@ public static partial class ModAnimation
         aniFPSTimer = aniLastTick;
         aniLastStamp = FrameUtils.NowStamp();
         aniRunning = true; // 标记动画执行开始
+
+        // 提升计时器分辨率，防止高帧率档被 Sleep(1) 的粗粒度等待拖回约 64fps
+        _ = _TimeBeginPeriod(1);
 
         aniFpsLimit = GetAniFpsLimitSafe();
         Config.System.AnimationFpsLimitConfig.Observe(new ConfigObserver(ConfigEvent.Changed,
